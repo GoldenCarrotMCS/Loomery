@@ -13,7 +13,7 @@ function png(width = 16, height = 16, rgba = [255, 40, 40, 255]) {
 }
 
 const files = {
-  "pack.mcmeta": enc.encode(JSON.stringify({ pack: { pack_format: 34, description: "GeyserConverter fixture" } })),
+  "pack.mcmeta": enc.encode(JSON.stringify({ pack: { pack_format: 34, description: "Loomery fixture" } })),
   "pack.png": png(64, 64, [40, 200, 120, 255]),
   // vanilla retextures
   "assets/minecraft/textures/block/oak_log.png": png(),

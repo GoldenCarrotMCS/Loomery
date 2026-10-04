@@ -37,6 +37,24 @@ describe("aux stages", () => {
     });
   });
 
+  it("lands vanilla sound replacements where Bedrock looks them up", async () => {
+    const zip = fixtureZip({
+      "pack.mcmeta": JSON.stringify({ pack: { pack_format: 15 } }),
+      // Renamed on Bedrock: ambient/cave/cave14 → cave/cave14.
+      "assets/minecraft/sounds/ambient/cave/cave14.ogg": new Uint8Array([1, 2, 3]),
+      // Same path on both editions.
+      "assets/minecraft/sounds/mob/creeper/say1.ogg": new Uint8Array([4, 5, 6]),
+      // A sounds.json elsewhere makes the optimizer run its unreferenced-sound
+      // sweep — which must not take the vanilla replacements with it.
+      "assets/custom/sounds.json": JSON.stringify({ "magic.zap": { sounds: ["magic/zap"] } }),
+      "assets/custom/sounds/magic/zap.ogg": new Uint8Array([7]),
+    });
+    const out = readZip((await convertPack(zip, { packName: "Snd" })).mcpack);
+    expect(out.read("sounds/cave/cave14.ogg")).toEqual(new Uint8Array([1, 2, 3]));
+    expect(out.read("sounds/mob/creeper/say1.ogg")).toEqual(new Uint8Array([4, 5, 6]));
+    expect(out.has("sounds/custom/magic/zap.ogg")).toBe(true);
+  });
+
   it("converts sounds.json and copies oggs", async () => {
     const zip = fixtureZip({
       "pack.mcmeta": JSON.stringify({ pack: { pack_format: 15 } }),

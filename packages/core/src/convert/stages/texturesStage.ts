@@ -1,6 +1,7 @@
 import type { ConversionContext, PipelineStage } from "../context.js";
 import { remapVanillaTexture } from "../../data/vanillaTextureMap.js";
-import { sanitizePng } from "../../image/png.js";
+import { decodePng, sanitizePng } from "../../image/png.js";
+import { encodeTga } from "../../image/tga.js";
 
 /**
  * Real vanilla texture categories. Anything else directly under
@@ -13,7 +14,7 @@ const VANILLA_TEXTURE_CATEGORIES = new Set([
   "gui", "particle", "painting", "font", "mob_effect", "trims", "effect",
 ]);
 /** Vanilla categories a dedicated stage converts from source — no skip report needed. */
-const HANDLED_BY_STAGE = new Set(["painting", "font"]);
+const HANDLED_BY_STAGE = new Set(["painting", "font", "gui"]);
 
 /**
  * Copies vanilla-namespace textures into their Bedrock locations using the
@@ -53,15 +54,24 @@ export const texturesStage: PipelineStage = {
         }
         const data = readTexture(ctx, path);
         if (data === undefined) continue;
-        ctx.bedrock.write(remap.outputPath, data);
+        // Bedrock's legacy entity textures ship as .tga and are looked up by
+        // that extension; PNG bytes under a .tga name render nothing. Decode
+        // once and re-emit in whichever format each target expects.
+        const tgaTargets = remap.outputPaths.filter((p) => p.endsWith(".tga"));
+        const pngTargets = remap.outputPaths.filter((p) => !p.endsWith(".tga"));
+        for (const target of pngTargets) ctx.bedrock.write(target, data);
+        if (tgaTargets.length > 0) {
+          const tga = encodeTga(decodePng(data));
+          for (const target of tgaTargets) ctx.bedrock.write(target, tga);
+        }
         if (remap.exact) {
-          ctx.report.converted("textures", path, [remap.outputPath]);
+          ctx.report.converted("textures", path, remap.outputPaths);
         } else {
           ctx.report.approximated(
             "textures",
             path,
             "no explicit rename rule — copied with same filename (correct for most modern textures)",
-            [remap.outputPath],
+            remap.outputPaths,
           );
         }
         // mcmeta files are read directly from ctx.java by the flipbook stage,

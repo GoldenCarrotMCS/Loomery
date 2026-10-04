@@ -16,6 +16,7 @@ import { parseLenientJson } from "../../java/json.js";
 import { frameTicks } from "../../java/mcmeta.js";
 import { fitFilePath, fitPathName } from "../../util/packPath.js";
 import type { JavaElement } from "../../java/model.js";
+import { ITEM_RENAMES } from "../../data/vanillaTextureMap.js";
 
 /** Sanitize a resource location into a safe identifier chunk. */
 export function safeName(id: string): string {
@@ -78,7 +79,7 @@ export const itemsStage: PipelineStage = {
       }
     }
 
-    const variants = [...legacy.variants, ...modern.variants];
+    const variants = [...legacy.variants, ...modern.variants, ...vanillaModelVariants(ctx, modern.variants)];
     const seen = new Set<string>();
     const encodeJobs: EncodeJob[] = [];
     let done = 0;
@@ -177,6 +178,23 @@ function convertSpriteVariant(ctx: ConversionContext, variant: ItemVariant, reso
   const iconKey = colorHint !== undefined ? `${name}_${colorHint.toString(16)}` : name;
   const outPath = `textures/geyser_custom/${iconKey}.png`;
 
+  // A plugin item that reuses a vanilla model (CraftEngine/Nexo hang custom
+  // items on minecraft:item/apple so Bedrock shows an apple) points at a
+  // texture the pack doesn't ship — the client already has it. Reference
+  // Bedrock's own copy instead of dropping the item: the atlas entry resolves
+  // through the resource-pack stack down to the vanilla pack.
+  const builtinIcon = colorHint === undefined ? bedrockBuiltinIcon(ctx, layers) : undefined;
+  if (builtinIcon !== undefined) {
+    if (!ctx.itemTextures.has(iconKey)) ctx.itemTextures.set(iconKey, { textures: builtinIcon });
+    const definition = buildDefinition(ctx, variant, {
+      icon: iconKey,
+      displayHandheld: resolved.kind === "sprite_handheld",
+    });
+    ctx.definitionTextures.set(definition, layers);
+    ctx.report.converted("items", origin, [`${builtinIcon} (Bedrock's built-in texture)`]);
+    return;
+  }
+
   // Opt-in: a single-layer animated sprite can play its animation while HELD via
   // a flat attachable. The icon itself stays on the first frame regardless —
   // Bedrock has no flipbook for custom item icons.
@@ -235,6 +253,63 @@ function convertSpriteVariant(ctx: ConversionContext, variant: ItemVariant, reso
     if (note !== undefined) outputs.push(note);
   }
   ctx.report.converted("items", origin, outputs);
+}
+
+/**
+ * Bedrock texture path for a sprite whose layers are all vanilla item textures
+ * the pack does not ship, or undefined when the pack has any of them (then the
+ * normal composite path applies) or the texture is not a known Bedrock item.
+ * Only layer0 is used: Bedrock's own item textures are already composited.
+ */
+function bedrockBuiltinIcon(ctx: ConversionContext, layers: string[]): string | undefined {
+  if (layers.length === 0) return undefined;
+  for (const layerId of layers) {
+    if (ctx.java.has(ctx.java.assetPath("textures", layerId, ".png"))) return undefined;
+  }
+  const loc = parseResourceLocation(layers[0]!);
+  if (loc.namespace !== "minecraft" || !loc.path.startsWith("item/")) return undefined;
+  const bedrockName = ITEM_RENAMES[loc.path.slice("item/".length)];
+  return bedrockName === undefined ? undefined : `textures/items/${bedrockName}`;
+}
+
+/**
+ * Variants for plugin items that wear a vanilla item model on another material
+ * (CraftEngine `material: paper`, `item_model: minecraft:apple`). Nothing in the
+ * pack describes these: the Java client renders minecraft:apple's own model.
+ * Geyser matches on the stack's item_model component, so each needs a
+ * definition under its material with `model: minecraft:apple` — without one,
+ * Bedrock shows plain paper.
+ *
+ * When the pack overrides that vanilla definition (assets/minecraft/items/
+ * apple.json), its variants are reused re-hosted on the material, so the
+ * plugin item looks like the pack's apple, as on Java. Otherwise the vanilla
+ * model is used, and the sprite path falls back to Bedrock's own texture.
+ */
+function vanillaModelVariants(ctx: ConversionContext, modern: ItemVariant[]): ItemVariant[] {
+  const out: ItemVariant[] = [];
+  const seen = new Set<string>();
+  for (const item of ctx.options.vanillaModelItems) {
+    const key = `${item.baseItem}|${item.itemModel}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const origin = `plugin item ${item.key} (${item.baseItem} wearing ${item.itemModel})`;
+    const fromPack = modern.filter(
+      (v) => v.source.kind === "modern" && v.source.itemModelId === item.itemModel,
+    );
+    if (fromPack.length > 0) {
+      for (const v of fromPack) out.push({ ...v, baseItem: item.baseItem, origin });
+      continue;
+    }
+    const path = item.itemModel.slice("minecraft:".length);
+    out.push({
+      baseItem: item.baseItem,
+      model: `minecraft:item/${path}`,
+      source: { kind: "modern", itemModelId: item.itemModel },
+      predicates: [],
+      origin,
+    });
+  }
+  return out;
 }
 
 /** Frame strip + tick timing of an animated sprite layer, if it is one. */

@@ -152,6 +152,11 @@ function registerItem(
   }
   state.aliasesByKey.set(key, aliases);
 
+  const vanillaModel = vanillaItemModel(item["item_model"]);
+  if (vanillaModel !== undefined && base !== undefined && vanillaModel !== base) {
+    hints.vanillaModelItems.push({ key, baseItem: base, itemModel: vanillaModel });
+  }
+
   const cmd = item["custom_model_data"];
   if (typeof cmd === "number" && base !== undefined) hints.cmdKeys[`${base}|${cmd}`] = key;
 
@@ -189,6 +194,21 @@ function modelAliases(id: string, item: Record<string, unknown>): string[] {
     if (Array.isArray(list)) for (const entry of list) add(entry);
   }
   return [...aliases];
+}
+
+/**
+ * An explicit `item_model` in the minecraft namespace ("minecraft:apple", or a
+ * bare "apple", which Minecraft reads the same way), normalised. CraftEngine's
+ * default — the item's own namespaced id — never lands here because it is only
+ * applied when the key is absent.
+ */
+function vanillaItemModel(value: unknown): string | undefined {
+  if (typeof value !== "string" || value === "") return undefined;
+  const colon = value.indexOf(":");
+  const ns = colon === -1 ? "minecraft" : value.slice(0, colon).toLowerCase();
+  const path = (colon === -1 ? value : value.slice(colon + 1)).toLowerCase();
+  if (ns !== "minecraft" || !/^[a-z0-9_]+$/.test(path)) return undefined;
+  return `minecraft:${path}`;
 }
 
 /** `data.equippable` (1.21.2+) or `settings.equipment` — the armor-set link. */

@@ -80,6 +80,15 @@ function resolveModelUncached(pack: JavaPack, id: string): ResolvedModel | undef
         if (model === undefined && isVanillaItemParent(current)) {
           model = { parent: "minecraft:item/generated" };
         }
+        // Vanilla item models are `layer0: minecraft:item/<name>` over their
+        // generic parent. The stand-ins above only carry the parent, so a model
+        // pointing straight at one (a plugin item reusing minecraft:item/apple
+        // so Bedrock shows an apple) resolved to zero layers and was dropped.
+        // A child model's own layer0 still wins in the merge below.
+        if (model !== undefined && model.textures === undefined && isVanillaItemParent(current)) {
+          const loc = parseResourceLocation(current);
+          model = { ...model, textures: { layer0: `${loc.namespace}:${loc.path}` } };
+        }
       }
       if (model === undefined) {
         terminalParent = current;

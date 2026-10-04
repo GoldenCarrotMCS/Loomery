@@ -1,4 +1,4 @@
-# GeyserConverter
+# Loomery
 
 This was made almost entirely with claude fable 5, if you dont want to use a ai generated tool, refrain from further use
 
@@ -26,7 +26,8 @@ Everything runs client-side (Web Worker) — files never leave your PC. Static-h
 | Languages | ✅ `texts/*.lang` |
 | Bitmap fonts (PUA glyphs) | ✅ `font/glyph_XX.png` sheets |
 | Paintings | ✅ stitched `kz.png` atlas |
-| Core shaders, custom GUI, TTF fonts, `builtin/entity` items | ❌ reported as skipped (no Bedrock equivalent) |
+| Custom GUI panels | ✅ nine-sliced `textures/ui/*.png` + measurement of the border written as the `.json` sidecar |
+| Core shaders, TTF fonts, `builtin/entity` items | ❌ reported as skipped (no Bedrock equivalent) |
 
 ## Usage
 
@@ -44,7 +45,7 @@ Server setup: drop the `.mcpack` into Geyser's `packs/` folder and `geyser_mappi
 The same engine is available as a small HTTP server for automation:
 
 ```bash
-pnpm --filter @geyser-converter/api start   # PORT=3000 by default
+pnpm --filter @loomery/api start   # PORT=3000 by default
 ```
 
 ```bash
@@ -79,7 +80,8 @@ This converter stands on the shoulders of the projects and documentation below. 
 - **[java2bedrock.sh](https://github.com/Kas-tle/java2bedrock.sh)** by Kas-tle — the Java→Bedrock element/cube coordinate math, attachable bone structure (`geysercmd` chain), and per-slot display-transform constants follow the conventions this project established and proved in the wild.
 - **[GeyserMC](https://geysermc.org/)** — the whole reason this converter can exist: the [Custom Items API v2](https://geysermc.org/wiki/geyser/custom-items/) and [Custom Blocks](https://geysermc.org/wiki/geyser/custom-blocks/) mapping formats this tool emits, plus their wiki documentation.
 - **[GeyserMC Rainbow](https://github.com/GeyserMC/Rainbow)** — inspiration for the overall approach and the target output format (Bedrock pack + Geyser mappings).
-- **[GeyserMC PackConverter](https://github.com/GeyserMC/PackConverter)** and **[ConvertJavaTextureToBedrock](https://github.com/ModifiedCommand/ConvertJavaTextureToBedrock)** — prior art for the vanilla Java→Bedrock texture path mappings.
+- **[GeyserMC PackConverter](https://github.com/GeyserMC/PackConverter)** (MIT) and **[ConvertJavaTextureToBedrock](https://github.com/ModifiedCommand/ConvertJavaTextureToBedrock)** — the Java→Bedrock texture mapping tables in `packages/core/src/data/vanillaTextureMap.ts` start from PackConverter's `mappings/textures.json`. The non-block/item half was then re-resolved against Mojang's `bedrock-samples` texture tree: PackConverter's own resolver doubles the section name on three-level keys (`entity/banner/border` → `entity/entity/banner/...`), and its targets were checked one by one, keeping only those that matched exactly one real Bedrock path. Converting the block/item tables also turned up three pre-existing wrong entries (`dark_oak_sapling`, `observer_back`, `tropical_fish`) that shipped textures Bedrock never loads.
+- **[Mojang bedrock-samples](https://github.com/Mojang/bedrock-samples)** — the authoritative Bedrock resource-pack tree (11,756 texture paths) used to verify every ported mapping target, and the reference for Bedrock's TGA-format legacy entity textures.
 - **[wiki.bedrock.dev](https://wiki.bedrock.dev/)** — Bedrock render controllers (texture arrays powering the flipbook animation technique), attachables, glyph/emoji sheet documentation.
 - **[GeyserDisplayEntity](https://github.com/GeyserExtensionists/GeyserDisplayEntity)** — the extension that renders furniture / display-entity items on Bedrock; this tool emits its mappings and config format.
 - **[GeyserModelEngine](https://github.com/GeyserExtensionists/GeyserModelEngine)** and **[GeyserUtils](https://github.com/GeyserExtensionists/GeyserUtils)** — render ModelEngine/MythicMobs mobs on Bedrock; the `input/` folder layout (geometry + animations + `config.json`) this tool builds is theirs.

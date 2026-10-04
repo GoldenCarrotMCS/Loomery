@@ -3,7 +3,7 @@ import type { VirtualFs } from "../io/vfs.js";
 import type { ConversionReport } from "../report/report.js";
 import type { Timings } from "../report/timings.js";
 import type { RgbaImage } from "../image/png.js";
-import type { FurnitureTransform } from "../java/configShared.js";
+import type { FurnitureTransform, VanillaModelItem } from "../java/configShared.js";
 
 export interface ConvertOptions {
   /** Bedrock pack name shown in-game; defaults to Java pack description or zip name. */
@@ -44,6 +44,8 @@ export interface ConvertOptions {
   equippableHints: Record<string, { asset: string; slot: string }>;
   /** "minecraft:material|cmd" → config item key (cmd-dispatched packs). */
   cmdItemKeys: Record<string, string>;
+  /** Plugin items carrying a vanilla item model on another material (see ConfigHints). */
+  vanillaModelItems: VanillaModelItem[];
   /**
    * Item-model name → fixed dye colour (0xRRGGBB) from plugin configs.
    * Baked into 2D icons of server-tinted base items (leather, potions).
@@ -141,6 +143,7 @@ export const DEFAULT_OPTIONS: Omit<ConvertOptions, "packName"> = {
   displayNameHints: {},
   equippableHints: {},
   cmdItemKeys: {},
+  vanillaModelItems: [],
   colorHints: {},
   backpackItems: [],
   furnitureItems: [],

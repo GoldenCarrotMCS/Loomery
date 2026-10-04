@@ -1,4 +1,4 @@
-import type { PngRecompressor } from "@geyser-converter/core";
+import type { PngRecompressor } from "@loomery/core";
 
 interface Reply {
   id: number;

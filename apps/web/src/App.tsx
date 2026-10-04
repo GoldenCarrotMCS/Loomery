@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { wrap, proxy, transfer, type Remote } from "comlink";
-import type { ConvertResult } from "@geyser-converter/core";
+import type { ConvertResult } from "@loomery/core";
 import type { WorkerApi } from "./worker/convert.worker.js";
+import { packNameFor, packNamesFor, uploadLabelFor } from "./packNaming.js";
 import { DropZone } from "./components/DropZone.js";
 import { ProgressView } from "./components/ProgressView.js";
 import { ResultView } from "./components/ResultView.js";
+import { Intro } from "./components/Intro.js";
+import { FeatureGrid, PluginRoster, Faq } from "./components/Marketing.js";
+import { I18nProvider, useI18n, type LocaleId } from "./i18n/index.js";
+import { RichText } from "./i18n/RichText.js";
 
 type Phase =
   | { kind: "idle" }
@@ -12,7 +17,50 @@ type Phase =
   | { kind: "done"; result: ConvertResult; fileName: string; packName: string }
   | { kind: "error"; message: string };
 
+/** Inline SVG so the UI carries no icon-font or image dependency. */
+export function BrandMark({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5v-9Z" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" />
+      <path d="M3 7.5 12 12l9-4.5M12 12v9" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function LanguageSwitcher() {
+  const { locale, setLocale, locales } = useI18n();
+  return (
+    <label className="lang" title="Language">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" stroke="currentColor" strokeWidth="1.6" />
+      </svg>
+      <select
+        value={locale}
+        onChange={(e) => setLocale(e.target.value as LocaleId)}
+        aria-label="Language"
+      >
+        {locales.map((l) => (
+          <option key={l.id} value={l.id}>
+            {l.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** App-level i18n wrapper, so the inner component can use the hook. */
 export function App() {
+  return (
+    <I18nProvider>
+      <LoomeryApp />
+    </I18nProvider>
+  );
+}
+
+function LoomeryApp() {
+  const { t } = useI18n();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [attachableMaterial, setAttachableMaterial] = useState("entity_alphatest_one_sided");
   const [modernBaseItem, setModernBaseItem] = useState("minecraft:paper");
@@ -86,19 +134,12 @@ export function App() {
     async (files: File[]) => {
       const myRun = runId.current;
       const stale = (): boolean => runId.current !== myRun;
-      const first = files[0]!;
-      // Name a merged pack after its inputs, not a constant. packagingStage
-      // derives both manifest UUIDs from packName, so a fixed "Merged Pack"
-      // gave every merged pack anyone ever produced the same identity —
-      // Bedrock keys installed packs by UUID, so two different merged packs
-      // would overwrite each other on the client and a server could not ship
-      // both.
-      const strip = (n: string): string => n.replace(/\.(zip|mcpack|tgz|tar\.gz)$/i, "");
-      const packName =
-        files.length === 1
-          ? strip(first.name)
-          : `Merged: ${files.map((f) => strip(f.name)).join(" + ")}`;
-      const label = files.length === 1 ? first.name : `${files.length} packs`;
+      // Naming lives in packNaming.ts because packagingStage derives both
+      // manifest UUIDs from packName — a constant name for merged packs gave
+      // every merge the same identity, so two different merged packs would
+      // overwrite each other on the Bedrock client.
+      const packName = packNameFor(files);
+      const label = uploadLabelFor(files);
       setPhase({ kind: "converting", stage: "reading files", done: 0, total: 1, fileName: label });
       try {
         // Read concurrently — order is merge priority, and Promise.all keeps it.
@@ -112,7 +153,7 @@ export function App() {
           transfer(packs, packs.map((p) => p.buffer)),
           {
             packName,
-            packNames: files.map((f) => f.name),
+            packNames: packNamesFor(files),
             attachableMaterial, modernBaseItem, maxAnimationFrames, optimizePack, maxCompression, animate2dHeldItems,
           },
           proxy((stage: string, done: number, total: number) => {
@@ -148,140 +189,227 @@ export function App() {
     setPhase({ kind: "idle" });
   }, [terminateWorker]);
 
+  const busy = phase.kind === "converting";
+  const canConvert = packFiles.length > 0 && !busy;
+
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 20px" }}>
-      <header style={{ textAlign: "center", marginBottom: 32 }}>
-        <h1 style={{ margin: 0, fontSize: 32 }}>
-          Geyser<span style={{ color: "var(--accent)" }}>Converter</span>
-        </h1>
-        <p style={{ color: "var(--muted)", marginTop: 8 }}>
-          Java Edition resource pack → Bedrock pack + Geyser mappings. Everything runs in your
-          browser — files never leave your PC.
+    <div className="shell">
+      <header className="app-header">
+        <div className="brand-row">
+          <div className="brand">
+            <span className="brand-mark">
+              <BrandMark />
+            </span>
+            <span className="brand-name">Loomery</span>
+          </div>
+          <LanguageSwitcher />
+        </div>
+        <p className="tagline">
+          <RichText text={t("header.tagline")} />
         </p>
+        <div className="badge-row">
+          <span className="badge">
+            <span className="badge-dot" />
+            {t("header.badgeLocal")}
+          </span>
+          <span className="badge">{t("header.badgePrivate")}</span>
+          <span className="badge">{t("header.badgeOpenSource")}</span>
+        </div>
       </header>
 
-      <div style={{ textAlign: "center", marginBottom: 28 }}>
-        <a
-          href="https://ko-fi.com/progamingdk"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            background: "#ff5e5b",
-            color: "#fff",
-            fontWeight: 700,
-            fontSize: 15,
-            textDecoration: "none",
-            padding: "10px 22px",
-            borderRadius: 999,
-            boxShadow: "0 2px 10px rgba(255,94,91,0.4)",
-          }}
-        >
-          ☕ Support development on Ko-fi
-        </a>
-        <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>
-          Free & open source — donations help cover dev costs.
-        </div>
-      </div>
+      {/* Scroll-driven hero: the 3D item disassembly that explains what the
+          converter does, before the tool itself. */}
+      <Intro />
 
-      {phase.kind === "idle" && (
-        <>
-          <DropZone onFiles={setPackFiles} selected={packFiles} />
-
-          {/* Compression controls — surfaced (not buried under Advanced) since size is what most people tune. */}
-          <div
-            style={{
-              background: "var(--panel)",
-              border: "1px solid var(--border)",
-              borderRadius: 12,
-              padding: 16,
-              marginTop: 16,
-              display: "grid",
-              gap: 12,
-            }}
-          >
-            <label style={{ ...labelStyle, display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={optimizePack}
-                onChange={(e) => setOptimizePack(e.target.checked)}
-              />
-              Lossless pack optimization — minify JSON, merge duplicate + drop unused textures (never
-              changes what players see)
-            </label>
-            <label style={{ ...labelStyle, display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={animate2dHeldItems}
-                onChange={(e) => setAnimate2dHeldItems(e.target.checked)}
-              />
-              Animate held 2D items — plays an animated sprite's frames while the item is held.
-              Bedrock can't animate item icons, so the inventory picture stays on the first frame,
-              and held items render as a flat card instead of Bedrock's extruded sprite.
-            </label>
-            {optimizePack && (
-              <label style={{ ...labelStyle, display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={maxCompression}
-                  onChange={(e) => setMaxCompression(e.target.checked)}
-                />
-                Maximum compression — losslessly recompress large textures (oxipng) for ~12% more off
-                them. Runs in a background thread; adds a minute or two on big packs.
-              </label>
-            )}
-            {optimizePack && maxCompression && (
-              <label style={{ ...labelStyle, paddingLeft: 24 }}>
-                Compression effort — level {oxipngLevel}{" "}
-                {oxipngLevel === 4 ? "(fastest)" : oxipngLevel === 6 ? "(smallest, slowest)" : "(balanced)"}
-                <input
-                  type="range"
-                  min={4}
-                  max={6}
-                  step={1}
-                  value={oxipngLevel}
-                  onChange={(e) => setOxipngLevel(Number(e.target.value))}
-                  style={{ width: "100%", maxWidth: 280 }}
-                />
-                <span style={{ fontSize: 12 }}>
-                  Higher levels trade minutes for a few % more; the gain past 4 is usually small.
-                </span>
-              </label>
+      <div className="layout">
+        {/* Left rail: everything the user configures, sticky so Convert and the
+            staged pack list stay reachable while the workspace scrolls. */}
+        <aside className="rail">
+          <div className="rail-card">
+            <div className="rail-card-title">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M21 8.5 12 4 3 8.5v7L12 20l9-4.5v-7Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                <path d="M3 8.5 12 13l9-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+              </svg>
+              {t("rail.packs")}
+            </div>
+            {packFiles.length === 0 ? (
+              <div className="rail-empty">
+                <strong>{t("rail.empty")}</strong>
+                <span>{t("rail.emptyHint")}</span>
+              </div>
+            ) : (
+              <div className="rail-body">
+                <div className="staged-note">
+                  {packFiles.length === 1 ? t("rail.stagedHint") : <RichText text={t("rail.mergeHint")} />}
+                </div>
+                <div className="staged-rows">
+                  {packFiles.map((file, i) => (
+                    <div key={`${file.name}:${file.size}`} className="staged-row">
+                      <span className="staged-index">{i + 1}</span>
+                      <span className="staged-name" title={file.name}>
+                        {file.name}
+                      </span>
+                      <span className="staged-size">{(file.size / 1024 / 1024).toFixed(1)} MB</span>
+                      <button
+                        type="button"
+                        className="mini-btn"
+                        onClick={() => {
+                          const next = [...packFiles];
+                          if (i === 0) return;
+                          const [item] = next.splice(i, 1);
+                          next.splice(i - 1, 0, item!);
+                          setPackFiles(next);
+                        }}
+                        disabled={i === 0}
+                        aria-label={t("rail.moveUp")}
+                        title={t("rail.moveUp")}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="mini-btn"
+                        onClick={() => {
+                          const next = [...packFiles];
+                          if (i === packFiles.length - 1) return;
+                          const [item] = next.splice(i, 1);
+                          next.splice(i + 1, 0, item!);
+                          setPackFiles(next);
+                        }}
+                        disabled={i === packFiles.length - 1}
+                        aria-label={t("rail.moveDown")}
+                        title={t("rail.moveDown")}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        className="mini-btn mini-btn-danger"
+                        onClick={() => setPackFiles(packFiles.filter((_, j) => j !== i))}
+                        aria-label={t("rail.remove")}
+                        title={t("rail.remove")}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
 
-          {/* Plugin config zips — always visible since they're critical for accuracy. */}
-          <div
-            style={{
-              background: "var(--panel)",
-              border: "1px solid var(--border)",
-              borderRadius: 12,
-              padding: 16,
-              marginTop: 16,
-              display: "grid",
-              gap: 12,
-            }}
-          >
-            <label style={labelStyle}>
-              Plugin configs & datapacks (optional, multiple allowed) — Oraxen / Nexo / ItemsAdder /
-              CraftEngine items and HMCCosmetics cosmetics. Zip each plugin's config folder (e.g.{" "}
-              <code>plugins/Nexo/items/</code>,{" "}
-              <code>plugins/CraftEngine/resources/</code>,{" "}
-              <code>plugins/HMCCosmetics/cosmetics/</code>) — upload them together or as separate
-              zips. Enables real base items, display names, armor sets, furniture, and
-              back-cosmetic positioning.
-              <br />
-              Using a <strong>datapack</strong> instead of a plugin (Stellarity, Crop &amp; Kettle,
-              anything using <code>minecraft:item_model</code>)? Drop the datapack zip here too —
-              its loot tables, recipes and advancements are what say which vanilla item each custom
-              model is attached to. Without it every item falls back to the modern base item below.
+          <div className="rail-card">
+            <div className="rail-card-title">{t("rail.options")}</div>
+            <div className="rail-body">
+              <label className="check">
+                <input type="checkbox" checked={optimizePack} onChange={(e) => setOptimizePack(e.target.checked)} />
+                <span>
+                  <span className="check-title">{t("rail.optimize")}</span>
+                  <span className="check-body">{t("rail.optimizeHint")}</span>
+                </span>
+              </label>
+              {optimizePack && (
+                <label className="check">
+                  <input type="checkbox" checked={maxCompression} onChange={(e) => setMaxCompression(e.target.checked)} />
+                  <span>
+                    <span className="check-title">{t("rail.maxCompress")}</span>
+                    <span className="check-body">{t("rail.maxCompressHint")}</span>
+                  </span>
+                </label>
+              )}
+              {optimizePack && maxCompression && (
+                <div className="check-sub">
+                  <div className="field-label">
+                    {t("rail.effort", {
+                      level: oxipngLevel,
+                      tone:
+                        oxipngLevel === 4 ? t("rail.effortFast") : oxipngLevel === 6 ? t("rail.effortSlow") : t("rail.effortBalanced"),
+                    })}
+                  </div>
+                  <input
+                    className="range"
+                    type="range"
+                    min={4}
+                    max={6}
+                    step={1}
+                    value={oxipngLevel}
+                    onChange={(e) => setOxipngLevel(Number(e.target.value))}
+                    aria-label={t("rail.effort", { level: oxipngLevel, tone: "" })}
+                  />
+                  <span className="field-hint">{t("rail.effortHint")}</span>
+                </div>
+              )}
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={animate2dHeldItems}
+                  onChange={(e) => setAnimate2dHeldItems(e.target.checked)}
+                />
+                <span>
+                  <span className="check-title">{t("rail.animate2d")}</span>
+                  <span className="check-body">{t("rail.animate2dHint")}</span>
+                </span>
+              </label>
+
+              <button className="disclosure" aria-expanded={showOptions} onClick={() => setShowOptions((v) => !v)}>
+                <span className="disclosure-caret">▶</span>
+                {t("rail.advanced")}
+              </button>
+              {showOptions && (
+                <div className="rail-body">
+                  <label className="field">
+                    <span className="field-label">{t("rail.material")}</span>
+                    <select
+                      className="select"
+                      value={attachableMaterial}
+                      onChange={(e) => setAttachableMaterial(e.target.value)}
+                    >
+                      <option value="entity_alphatest_one_sided">entity_alphatest_one_sided (default)</option>
+                      <option value="entity_alphatest">entity_alphatest</option>
+                      <option value="entity">entity (opaque)</option>
+                      <option value="entity_alphablend">entity_alphablend</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span className="field-label">{t("rail.baseItem")}</span>
+                    <input
+                      className="input"
+                      value={modernBaseItem}
+                      onChange={(e) => setModernBaseItem(e.target.value)}
+                      placeholder="minecraft:paper"
+                    />
+                    <span className="field-hint">{t("rail.baseItemHint")}</span>
+                  </label>
+                  <label className="field">
+                    <span className="field-label">{t("rail.frames")}</span>
+                    <select
+                      className="select"
+                      value={maxAnimationFrames}
+                      onChange={(e) => setMaxAnimationFrames(Number(e.target.value))}
+                    >
+                      <option value={0}>{t("rail.framesFull")}</option>
+                      <option value={20}>{t("rail.framesN", { n: 20 })}</option>
+                      <option value={10}>{t("rail.framesN", { n: 10 })}</option>
+                      <option value={5}>{t("rail.framesN", { n: 5 })}</option>
+                      <option value={1}>{t("rail.framesN", { n: 1 })}</option>
+                    </select>
+                    <span className="field-hint">{t("rail.framesHint")}</span>
+                  </label>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rail-card">
+            <div className="rail-card-title">{t("rail.configs")}</div>
+            <div className="rail-body">
+              <span className="field-hint">{t("rail.configsHint")}</span>
               <input
+                className="file-input"
                 type="file"
                 accept=".zip"
                 multiple
-                style={{ ...inputStyle, padding: 6 }}
                 onChange={async (e) => {
                   const files = [...(e.target.files ?? [])];
                   const loaded = await Promise.all(
@@ -294,190 +422,110 @@ export function App() {
                 }}
               />
               {configZips.length > 0 && (
-                <span style={{ color: "var(--accent)" }}>
-                  ✓ {configZips.map((c) => c.name).join(", ")} loaded
-                </span>
+                <div className="rail-configs">
+                  <div className="badge" style={{ alignSelf: "flex-start" }}>
+                    <span className="badge-dot" />
+                    {configZips.length === 1
+                      ? configZips[0]!.name
+                      : t("rail.configsCount", { count: configZips.length })}
+                  </div>
+                </div>
               )}
-            </label>
-          </div>
-
-          <div style={{ marginTop: 16 }}>
-            <button
-              onClick={() => setShowOptions((v) => !v)}
-              style={{
-                background: "transparent",
-                color: "var(--muted)",
-                border: "none",
-                cursor: "pointer",
-                fontSize: 13,
-              }}
-            >
-              {showOptions ? "▾" : "▸"} Advanced options
-            </button>
-            {showOptions && (
-              <div
-                style={{
-                  background: "var(--panel)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 12,
-                  padding: 16,
-                  marginTop: 8,
-                  display: "grid",
-                  gap: 12,
-                }}
-              >
-                <label style={labelStyle}>
-                  Attachable material (3D items)
-                  <select
-                    value={attachableMaterial}
-                    onChange={(e) => setAttachableMaterial(e.target.value)}
-                    style={inputStyle}
-                  >
-                    <option value="entity_alphatest_one_sided">entity_alphatest_one_sided (default)</option>
-                    <option value="entity_alphatest">entity_alphatest</option>
-                    <option value="entity">entity (opaque)</option>
-                    <option value="entity_alphablend">entity_alphablend</option>
-                  </select>
-                </label>
-                <label style={labelStyle}>
-                  Fallback base item for modern item-model assets
-                  <input
-                    value={modernBaseItem}
-                    onChange={(e) => setModernBaseItem(e.target.value)}
-                    style={inputStyle}
-                    placeholder="minecraft:paper"
-                  />
-                </label>
-                <label style={labelStyle}>
-                  Animation quality (max flipbook frames) — lower = smaller pack, faster downloads
-                  <select
-                    value={maxAnimationFrames}
-                    onChange={(e) => setMaxAnimationFrames(Number(e.target.value))}
-                    style={inputStyle}
-                  >
-                    <option value={0}>Full animation (default)</option>
-                    <option value={20}>20 frames</option>
-                    <option value={10}>10 frames (balanced)</option>
-                    <option value={5}>5 frames (small pack)</option>
-                    <option value={1}>1 frame (no animation, smallest)</option>
-                  </select>
-                </label>
-              </div>
-            )}
-          </div>
-
-          {/* Conversion only starts here — dropping a pack just stages it, so
-              config zips and options can be set before the (long) run. */}
-          <div style={{ textAlign: "center", marginTop: 24 }}>
-            <button
-              onClick={() => {
-                if (packFiles.length > 0) void startConvert(packFiles);
-              }}
-              disabled={packFiles.length === 0}
-              style={{
-                ...buttonStyle,
-                padding: "14px 36px",
-                fontSize: 17,
-                opacity: packFiles.length === 0 ? 0.45 : 1,
-                cursor: packFiles.length === 0 ? "not-allowed" : "pointer",
-              }}
-            >
-              Convert pack
-            </button>
-            <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>
-              {packFiles.length === 0
-                ? "Add a resource pack above to get started."
-                : "Add any plugin config zips and set your options first — then convert."}
             </div>
           </div>
-        </>
-      )}
-      {phase.kind === "converting" && (
-        <ProgressView stage={phase.stage} done={phase.done} total={phase.total} fileName={phase.fileName} onCancel={cancelConversion} />
-      )}
-      {phase.kind === "done" && (
-        <ResultView
-          result={phase.result}
-          packName={phase.packName}
-          onReset={() => setPhase({ kind: "idle" })}
-        />
-      )}
-      {phase.kind === "error" && (
-        <div
-          style={{
-            background: "var(--panel)",
-            border: "1px solid var(--err)",
-            borderRadius: 12,
-            padding: 24,
-          }}
-        >
-          <strong style={{ color: "var(--err)" }}>Conversion failed</strong>
-          <p style={{ color: "var(--muted)" }}>{phase.message}</p>
-          <button onClick={() => setPhase({ kind: "idle" })} style={buttonStyle}>
-            Try again
-          </button>
-        </div>
-      )}
 
-      <footer
-        style={{
-          textAlign: "center",
-          marginTop: 48,
-          paddingTop: 24,
-          borderTop: "1px solid var(--border)",
-          color: "var(--muted)",
-          fontSize: 13,
-        }}
-      >
-        Free & open source. If it saved you time, you can{" "}
-        <a
-          href="https://ko-fi.com/progamingdk"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: "var(--accent)", fontWeight: 600 }}
-        >
-          support development on Ko-fi ☕
-        </a>{" "}
-        to help cover dev costs.
-        <div style={{ marginTop: 8 }}>
-          <a
-            href="https://github.com/smashyalts/java2bedrockclient"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: "var(--accent)", fontWeight: 600 }}
-          >
-            Source on GitHub
-          </a>{" "}
-          — issues, contributions and credits for the projects this builds on.
+          <div className="rail-actions">
+            <button
+              className="btn btn-primary btn-lg"
+              onClick={() => {
+                if (canConvert) void startConvert(packFiles);
+              }}
+              disabled={!canConvert}
+            >
+              {t("convert.action")}
+            </button>
+            <span className="field-hint" style={{ textAlign: "center" }}>
+              {packFiles.length === 0 ? t("convert.needPack") : t("convert.ready")}
+            </span>
+          </div>
+        </aside>
+
+        {/* Right column: the workspace, plus the reference content below it. */}
+        <div className="main-col">
+          <section className="workspace">
+            <div className="workspace-bar">
+              <span className="workspace-label">
+                <span className="badge-dot" />
+                {t("work.workspace")}
+              </span>
+              {phase.kind === "converting" && <span className="workspace-stage">{phase.stage}</span>}
+            </div>
+
+            {phase.kind === "idle" && (
+              <DropZone onFiles={setPackFiles} selected={packFiles} />
+            )}
+
+            {phase.kind === "converting" && (
+              <ProgressView
+                stage={phase.stage}
+                done={phase.done}
+                total={phase.total}
+                fileName={phase.fileName}
+                onCancel={cancelConversion}
+              />
+            )}
+
+            {phase.kind === "done" && (
+              <ResultView
+                result={phase.result}
+                packName={phase.packName}
+                onReset={() => setPhase({ kind: "idle" })}
+              />
+            )}
+
+            {phase.kind === "error" && (
+              <div className="callout callout-err" role="alert">
+                <span className="callout-icon" aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+                    <path d="M12 7.5v5.5M12 16.2v.3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  </svg>
+                </span>
+                <div className="callout-body" style={{ flex: 1 }}>
+                  <div className="callout-title">{t("error.title")}</div>
+                  <p className="callout-text">{phase.message}</p>
+                  <button
+                    className="btn btn-sm"
+                    style={{ justifySelf: "flex-start", marginTop: 4 }}
+                    onClick={() => setPhase({ kind: "idle" })}
+                  >
+                    {t("error.retry")}
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <FeatureGrid />
+          <PluginRoster />
+          <Faq />
+        </div>
+      </div>
+
+      <footer className="footer">
+        <div>{t("footer.local")}</div>
+        <div className="footer-links">
+          <a href="https://github.com/GoldenCarrotMCS/Loomery" target="_blank" rel="noopener noreferrer">
+            {t("footer.source")}
+          </a>
+          <span className="footer-sep">·</span>
+          <a href="https://geysermc.org/wiki/geyser/custom-items/" target="_blank" rel="noopener noreferrer">
+            {t("footer.docs")}
+          </a>
+          <span className="footer-sep">·</span>
+          <span>{t("footer.license")}</span>
         </div>
       </footer>
     </div>
   );
 }
-
-const labelStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 4,
-  fontSize: 13,
-  color: "var(--muted)",
-};
-
-const inputStyle: React.CSSProperties = {
-  background: "var(--bg)",
-  color: "var(--text)",
-  border: "1px solid var(--border)",
-  borderRadius: 8,
-  padding: "8px 10px",
-  fontSize: 14,
-};
-
-export const buttonStyle: React.CSSProperties = {
-  background: "var(--accent)",
-  color: "#0f1115",
-  border: "none",
-  borderRadius: 8,
-  padding: "10px 20px",
-  fontSize: 15,
-  fontWeight: 600,
-  cursor: "pointer",
-};

@@ -4,7 +4,7 @@ import {
   parseOraxenConfigZips,
   type ConvertOptions,
   type ReportEntry,
-} from "@geyser-converter/core";
+} from "@loomery/core";
 
 // Usage: tsx test-convert.ts <pack.zip> [configZip.zip ...]
 const [packPath = "packitriedtoconvert.zip", ...configPaths] = process.argv.slice(2);

@@ -117,7 +117,12 @@ export const optimizeStage: PipelineStage = {
     // the pack while the report still listed each one as converted.
     if (ctx.bedrock.has("sounds/sound_definitions.json")) {
       const referencedSounds = collectReferencedSounds(ctx);
+      // Only the namespaced copies (sounds/<ns>/…) are ours to judge. Vanilla
+      // replacements sit at Bedrock's own un-namespaced paths and are
+      // referenced by the client's built-in definitions, which we never see.
+      const namespaces = new Set(ctx.java.namespaces());
       for (const path of ctx.bedrock.list({ prefix: "sounds/", suffix: ".ogg" })) {
+        if (!namespaces.has(path.split("/")[1] ?? "")) continue;
         if (referencedSounds.has(path)) continue;
         ctx.bedrock.delete(path);
         swept++;

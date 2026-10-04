@@ -1,3 +1,5 @@
+import { useI18n } from "../i18n/index.js";
+
 export function ProgressView({
   stage,
   done,
@@ -11,46 +13,34 @@ export function ProgressView({
   fileName: string;
   onCancel?: () => void;
 }) {
+  const { t } = useI18n();
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   return (
-    <div
-      style={{
-        background: "var(--panel)",
-        border: "1px solid var(--border)",
-        borderRadius: 16,
-        padding: 32,
-      }}
-    >
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>Converting {fileName}…</div>
-      <div style={{ color: "var(--muted)", marginBottom: 16 }}>
-        Stage: {stage} ({done}/{total})
+    <div className="progress-card" role="status" aria-live="polite">
+      <div className="progress-head">
+        <div className="progress-title" title={fileName}>
+          {t("work.converting", { name: fileName })}
+        </div>
+        <div className="progress-pct">{pct}%</div>
       </div>
-      <div style={{ background: "var(--bg)", borderRadius: 6, height: 10, overflow: "hidden" }}>
-        <div
-          style={{
-            width: `${pct}%`,
-            height: "100%",
-            background: "var(--accent)",
-            transition: "width 0.1s ease",
-          }}
-        />
+      <div className="progress-stage">{t("work.stage", { stage, done, total })}</div>
+      <div
+        className="progress-track"
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={t("work.converting", { name: fileName })}
+      >
+        <div className="progress-fill" style={{ width: `${pct}%` }} />
       </div>
+      <div className="progress-hint">{t("work.cancelHint")}</div>
       {onCancel && (
-        <button
-          onClick={onCancel}
-          style={{
-            marginTop: 16,
-            background: "transparent",
-            color: "var(--muted)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            padding: "8px 16px",
-            fontSize: 13,
-            cursor: "pointer",
-          }}
-        >
-          Cancel
-        </button>
+        <div className="progress-actions">
+          <button className="btn btn-ghost btn-sm" onClick={onCancel}>
+            {t("work.cancel")}
+          </button>
+        </div>
       )}
     </div>
   );

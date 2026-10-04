@@ -3,27 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GeyserConverter — Java → Bedrock Resource Pack Converter</title>
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Convert Java Edition resource packs to Bedrock Edition packs with Geyser mappings. Runs entirely in your browser — your files never leave your PC."
+    />
+    <title>Loomery — Java → Bedrock Resource Pack Converter</title>
+    <!--
+      Paint the page background before the bundle loads, so a slow first load
+      doesn't flash white. Everything else lives in src/styles.css.
+    -->
     <style>
-      :root {
-        color-scheme: dark;
-        --bg: #0f1115;
-        --panel: #1a1e26;
-        --border: #2c3240;
-        --accent: #34d399;
-        --accent-dim: #10b98122;
-        --text: #e5e7eb;
-        --muted: #9ca3af;
-        --warn: #fbbf24;
-        --err: #f87171;
-      }
-      * { box-sizing: border-box; }
+      html,
       body {
         margin: 0;
-        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-        background: var(--bg);
-        color: var(--text);
-        min-height: 100vh;
+        background-color: #080a0e;
       }
     </style>
   </head>

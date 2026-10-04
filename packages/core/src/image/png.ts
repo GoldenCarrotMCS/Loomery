@@ -107,17 +107,49 @@ function decodePngUntimed(bytes: Uint8Array): RgbaImage {
   const maxVal = depth === 16 ? 65535 : (1 << Math.min(depth, 8)) - 1;
   const to8 = (v: number): number => Math.round((v / maxVal) * 255);
 
+  // depth 8 is the overwhelmingly common case and `to8` is the identity there,
+  // so a per-pixel MUL + divide + Math.round + closure call is pure overhead —
+  // and this loop runs once per pixel of every texture in the pack.
+  const identity8 = depth === 8;
+
+  // Indexed images resolve through the palette; branch on it once instead of
+  // per pixel, and write channels straight out — the previous
+  // `[r, g, b] = [entry[0], entry[1], entry[2]]` allocated a 3-element array
+  // for every pixel.
+  if (palette !== undefined && channels === 1) {
+    for (let i = 0; i < width * height; i++) {
+      const entry = palette[src[i]!] ?? PALETTE_FALLBACK;
+      const o = i * 4;
+      out[o] = entry[0]!;
+      out[o + 1] = entry[1]!;
+      out[o + 2] = entry[2]!;
+      out[o + 3] = entry.length > 3 ? entry[3]! : transparency?.[src[i]!] !== undefined ? Number(transparency[src[i]!]) : 255;
+    }
+    return { width, height, data: out };
+  }
+
+  if (identity8 && channels === 4 && src instanceof Uint8Array && src.length === out.length) {
+    // Straight copy — the encoder's own `encodePng` output relands here on
+    // every re-decode pass (the optimizer re-reads what it wrote).
+    out.set(src);
+    return { width, height, data: out };
+  }
+
   for (let i = 0; i < width * height; i++) {
+    if (identity8 && channels === 3) {
+      const s = i * 3;
+      const o = i * 4;
+      out[o] = src[s]!;
+      out[o + 1] = src[s + 1]!;
+      out[o + 2] = src[s + 2]!;
+      out[o + 3] = 255;
+      continue;
+    }
     let r = 0;
     let g = 0;
     let b = 0;
     let a = 255;
-    if (palette !== undefined && channels === 1) {
-      const idx = src[i]!;
-      const entry = palette[idx] ?? [0, 0, 0];
-      [r, g, b] = [entry[0]!, entry[1]!, entry[2]!];
-      a = entry.length > 3 ? entry[3]! : transparency?.[idx] !== undefined ? Number(transparency[idx]) : 255;
-    } else if (channels === 1) {
+    if (channels === 1) {
       r = g = b = to8(src[i]!);
     } else if (channels === 2) {
       r = g = b = to8(src[i * 2]!);
@@ -139,6 +171,9 @@ function decodePngUntimed(bytes: Uint8Array): RgbaImage {
   }
   return { width, height, data: out };
 }
+
+/** Shared all-black entry for palette indices the PNG does not define. */
+const PALETTE_FALLBACK = [0, 0, 0, 255];
 
 /**
  * Rebuild a PNG's IDAT stream so its zlib checksum is valid, leaving every other
@@ -298,15 +333,23 @@ export function pngChunk(type: string, data: Uint8Array): Uint8Array {
  */
 export function encodeIndexedPng(image: RgbaImage): Uint8Array | undefined {
   const { width, height, data } = image;
+  const pixels = width * height;
   const seen = new Map<number, number>();
   for (let i = 0; i < data.length; i += 4) {
     const key = ((data[i]! << 24) | (data[i + 1]! << 16) | (data[i + 2]! << 8) | data[i + 3]!) >>> 0;
-    seen.set(key, (seen.get(key) ?? 0) + 1);
-    if (seen.size > 256) return undefined;
+    const n = seen.get(key);
+    if (n === undefined) {
+      // Bail on the 257th colour: this image needs the RGBA path.
+      if (seen.size === 256) return undefined;
+      seen.set(key, 1);
+    } else {
+      seen.set(key, n + 1);
+    }
   }
   // Sort: transparent entries first (shortest tRNS chunk), then by frequency
   // descending — frequently-used colors get lower indices which slightly
-  // improves deflate compression of the indexed scanline data.
+  // improves deflate compression of the indexed scanline data. Array#sort is
+  // stable, so equal-frequency colours keep first-seen order.
   const palette = [...seen.entries()].sort((a, b) => {
     const aAlpha = a[0] & 0xff;
     const bAlpha = b[0] & 0xff;
@@ -315,21 +358,41 @@ export function encodeIndexedPng(image: RgbaImage): Uint8Array | undefined {
     if (bAlpha === 255) return -1; // a transparent, b opaque → a first
     return b[1] - a[1]; // both transparent: by frequency
   }).map((e) => e[0]);
-  const indexOf = new Map<number, number>();
-  palette.forEach((c, i) => indexOf.set(c, i));
 
   const count = palette.length;
   const depth = count <= 2 ? 1 : count <= 4 ? 2 : count <= 16 ? 4 : 8;
   const rowBytes = Math.ceil((width * depth) / 8);
   // Filter 0 per scanline; palette indices carry no gradient for filters to exploit.
   const raw = new Uint8Array((rowBytes + 1) * height);
-  for (let y = 0; y < height; y++) {
-    const rowStart = y * (rowBytes + 1);
-    for (let x = 0; x < width; x++) {
-      const p = (y * width + x) * 4;
-      const key = ((data[p]! << 24) | (data[p + 1]! << 16) | (data[p + 2]! << 8) | data[p + 3]!) >>> 0;
-      const bitPos = x * depth;
-      raw[rowStart + 1 + (bitPos >> 3)]! |= indexOf.get(key)! << (8 - depth - (bitPos & 7));
+
+  // Reuse the counting map as the key→index lookup instead of building a second
+  // Map of the same ≤256 keys. Counts are already consumed by the sort above.
+  const indexOf = seen;
+  indexOf.clear();
+  for (let i = 0; i < count; i++) indexOf.set(palette[i]!, i);
+
+  if (depth === 8) {
+    // One index per byte: the general bit-packing below reduces to a plain
+    // store, and this is the depth nearly every real texture lands on.
+    const keyAt = (p: number): number =>
+      ((data[p]! << 24) | (data[p + 1]! << 16) | (data[p + 2]! << 8) | data[p + 3]!) >>> 0;
+    for (let y = 0; y < height; y++) {
+      const rowStart = y * (rowBytes + 1) + 1;
+      const rowPixel = y * width * 4;
+      for (let x = 0; x < width; x++) {
+        raw[rowStart + x] = indexOf.get(keyAt(rowPixel + x * 4))!;
+      }
+    }
+  } else {
+    for (let y = 0; y < height; y++) {
+      const rowStart = y * (rowBytes + 1);
+      const rowPixel = y * width * 4;
+      for (let x = 0; x < width; x++) {
+        const p = rowPixel + x * 4;
+        const key = ((data[p]! << 24) | (data[p + 1]! << 16) | (data[p + 2]! << 8) | data[p + 3]!) >>> 0;
+        const bitPos = x * depth;
+        raw[rowStart + 1 + (bitPos >> 3)]! |= indexOf.get(key)! << (8 - depth - (bitPos & 7));
+      }
     }
   }
 
@@ -510,24 +573,30 @@ export function firstFrame(image: RgbaImage): RgbaImage {
  */
 export function alphaBleed(image: RgbaImage): void {
   const { width, height, data } = image;
+  const rowStride = width * 4;
   // Seed with all opaque pixels, then fill only their direct neighbors.
+  //
+  // Only alpha decides whether a pixel is a source, and this pass never writes
+  // alpha — so which neighbors count as opaque is independent of the order we
+  // visit them in, and an already-filled pixel is never itself used as a
+  // source. That lets the four neighbors be tested inline instead of as a
+  // per-pixel array + iterator, which dominated the geometry stage's profile.
   for (let y = 0; y < height; y++) {
+    const rowBase = y * rowStride;
     for (let x = 0; x < width; x++) {
-      const idx = y * width + x;
-      if (data[idx * 4 + 3]! > 0) continue;
-      // Find nearest opaque neighbor (4-connectivity).
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-        const nIdx = ny * width + nx;
-        if (data[nIdx * 4 + 3]! > 0) {
-          data[idx * 4] = data[nIdx * 4]!;
-          data[idx * 4 + 1] = data[nIdx * 4 + 1]!;
-          data[idx * 4 + 2] = data[nIdx * 4 + 2]!;
-          break;
-        }
-      }
+      const p = rowBase + x * 4;
+      if (data[p + 3] !== 0) continue;
+      // Nearest opaque neighbor at 4-connectivity, right/left/down/up — the
+      // order the previous implementation scanned, so output is unchanged.
+      let src = -1;
+      if (x + 1 < width && data[p + 7] !== 0) src = p + 4;
+      else if (x > 0 && data[p - 1] !== 0) src = p - 4;
+      else if (y + 1 < height && data[p + rowStride + 3] !== 0) src = p + rowStride;
+      else if (y > 0 && data[p - rowStride + 3] !== 0) src = p - rowStride;
+      if (src < 0) continue;
+      data[p] = data[src]!;
+      data[p + 1] = data[src + 1]!;
+      data[p + 2] = data[src + 2]!;
     }
   }
 }

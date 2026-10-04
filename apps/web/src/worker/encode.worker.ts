@@ -6,7 +6,7 @@
  * geometry stage's atlas/icon encoding (the conversion hotspot) over all cores.
  * Nested under the conversion worker (see encodePool.ts).
  */
-import { encodePng } from "@geyser-converter/core";
+import { encodePng } from "@loomery/core";
 
 interface Job {
   id: number;

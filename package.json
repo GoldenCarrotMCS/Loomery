@@ -1,11 +1,12 @@
 {
-  "name": "geyser-converter",
+  "name": "loomery",
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev": "pnpm --filter @geyser-converter/web dev",
+    "dev": "pnpm --filter @loomery/web dev",
     "build": "pnpm -r build",
-    "test": "pnpm --filter @geyser-converter/core test",
+    "test": "pnpm -r test",
+    "test:coverage": "pnpm --filter @loomery/core test:coverage",
     "typecheck": "pnpm -r typecheck"
   },
   "packageManager": "pnpm@11.10.0"

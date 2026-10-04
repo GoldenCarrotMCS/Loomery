@@ -5,5 +5,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["src", "../../packages/core/src/types"]
+  "include": ["src", "test", "../../packages/core/src/types"]
 }

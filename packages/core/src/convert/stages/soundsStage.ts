@@ -1,5 +1,6 @@
 import type { ConversionContext, PipelineStage } from "../context.js";
 import { parseResourceLocation } from "../../java/javaPack.js";
+import { remapVanillaSound } from "../../data/vanillaSoundMap.js";
 
 interface JavaSoundEvent {
   category?: string;
@@ -27,7 +28,20 @@ export const soundsStage: PipelineStage = {
         const data = ctx.java.read(path);
         if (data !== undefined) {
           ctx.bedrock.write(out, data);
-          ctx.report.converted("sounds", path, [out]);
+          const outputs = [out];
+          // A minecraft-namespace ogg is a vanilla sound replacement. Bedrock's
+          // own sound_definitions reference vanilla sounds at sounds/<path>
+          // with no namespace — and often a different path — so the copy above
+          // (which only our generated definitions point at) never overrides
+          // anything. Land it where Bedrock actually looks too.
+          if (ns === "minecraft") {
+            for (const target of remapVanillaSound(rel.slice(0, -".ogg".length))) {
+              const vanillaOut = `sounds/${target}.ogg`;
+              ctx.bedrock.write(vanillaOut, data);
+              outputs.push(vanillaOut);
+            }
+          }
+          ctx.report.converted("sounds", path, outputs);
         }
       }
 

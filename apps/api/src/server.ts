@@ -1,5 +1,5 @@
 /**
- * GeyserConverter HTTP API — self-hostable, no GUI.
+ * Loomery HTTP API — self-hostable, no GUI.
  *
  *   POST /convert
  *     Content-Type: application/zip           → body is the Java pack zip
@@ -12,24 +12,37 @@
  *         maxCompression (default false; "true" runs the slow zopfli PNG pass)
  *
  *   Response: application/zip containing
- *     <packName>.mcpack, geyser_mappings.json, geyser_blocks.json, report.json
+ *     <packName>.mcpack, geyser_mappings.json, geyser_blocks.json,
+ *     geyser_displayentity_mappings.yml, geyserdisplayentity_config.yml,
+ *     modelengine_input.zip, report.json
  *
  *   GET /healthz → 200 "ok"
+ *   GET /info    → 200 JSON readiness/limits (maxUploadBytes, node version)
  */
 import http from "node:http";
 import { URL } from "node:url";
+import { pathToFileURL } from "node:url";
 import Busboy from "busboy";
 import { zipSync } from "fflate";
-import { convertPack, parseOraxenConfigZips, type ConvertOptions } from "@geyser-converter/core";
+import { convertPack, optionsFromHints, parseOraxenConfigZips, type ConvertOptions } from "@loomery/core";
 
 const PORT = Number(process.env.PORT ?? 3000);
 /** Reject uploads larger than this (default 512 MB). */
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_BYTES ?? 512 * 1024 * 1024);
 
-const USAGE = `GeyserConverter API
+const USAGE = `Loomery API
 POST /convert with the Java pack zip (application/zip body, or multipart fields "pack" + optional "config").
-Query params: packName, attachableMaterial, modernBaseItem, maxAnimationFrames.
+Query params:
+  packName            output name (default "converted_pack"; sanitized, max 80 chars)
+  attachableMaterial  material for generated attachables
+  modernBaseItem      host item for modern item-model assets (default minecraft:paper)
+  maxAnimationFrames  cap on flipbook timeline frames; 0 = full animation (default)
+  optimizePack        "false" or "0" disables the lossless minify/merge pass (default on)
+  maxCompression      "true" or "1" runs the slow zopfli PNG pass (default off)
+  oxipngLevel         1-6; browser-build knob, validated here but with no effect on this
+                      path (Node recompresses with zopfli, which takes no level)
 Returns a zip: <packName>.mcpack + geyser_mappings.json + geyser_blocks.json + report.json
+             (+ furniture mappings/config and modelengine_input.zip when the pack has them)
 `;
 
 async function handleConvert(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -89,14 +102,10 @@ async function handleConvert(req: http.IncomingMessage, res: http.ServerResponse
   if (maxComp !== null) options.maxCompression = maxComp === "true" || maxComp === "1";
   if (configZips.length > 0) {
     const hints = parseOraxenConfigZips(configZips);
-    options.baseItemHints = hints.baseItems;
-    options.displayNameHints = hints.displayNames;
-    options.equippableHints = hints.equippables;
-    options.cmdItemKeys = hints.cmdKeys;
-    options.colorHints = hints.colors;
-    options.backpackItems = hints.backpacks;
-    options.furnitureItems = hints.furniture;
-    options.configZipProvided = true;
+    // Shared with the web worker so a new hint field cannot reach one caller
+    // and silently miss the other. Carries furnitureTransforms and
+    // pluginConfigZips too, which this path used to drop.
+    Object.assign(options, optionsFromHints(hints, configZips));
   }
 
   const result = await convertPack(packBytes, options);
@@ -109,6 +118,9 @@ async function handleConvert(req: http.IncomingMessage, res: http.ServerResponse
   if (result.geyserBlockMappings) bundle["geyser_blocks.json"] = new TextEncoder().encode(result.geyserBlockMappings);
   if (result.displayEntityMappings) bundle["geyser_displayentity_mappings.yml"] = new TextEncoder().encode(result.displayEntityMappings);
   if (result.displayEntityConfig) bundle["geyserdisplayentity_config.yml"] = new TextEncoder().encode(result.displayEntityConfig);
+  // ModelEngine mob models — unzip into extensions/geysermodelengineextension/input/.
+  // The web app has always offered this; the API used to silently drop it.
+  if (result.modelEngineInput) bundle["modelengine_input.zip"] = result.modelEngineInput;
 
   const out = zipSync(bundle, { level: 6 });
   res.writeHead(200, {
@@ -166,33 +178,62 @@ function readMultipart(
   });
 }
 
-const server = http.createServer((req, res) => {
-  // CORS: allow browser tools to call the API too.
-  res.setHeader("access-control-allow-origin", "*");
-  res.setHeader("access-control-allow-methods", "POST, GET, OPTIONS");
-  res.setHeader("access-control-allow-headers", "content-type");
-  if (req.method === "OPTIONS") {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-  if (req.method === "GET" && (req.url === "/" || req.url === "/healthz")) {
-    res.writeHead(200, { "content-type": "text/plain" });
-    res.end(req.url === "/healthz" ? "ok" : USAGE);
-    return;
-  }
-  if (req.method === "POST" && req.url?.startsWith("/convert")) {
-    handleConvert(req, res).catch((err) => {
-      console.error(err);
-      if (!res.headersSent) res.writeHead(500, { "content-type": "text/plain" });
-      res.end(`conversion failed: ${err instanceof Error ? err.message : String(err)}`);
-    });
-    return;
-  }
-  res.writeHead(404, { "content-type": "text/plain" });
-  res.end(USAGE);
-});
+/**
+ * The request handler, built as a factory so tests can start it on an ephemeral
+ * port without the module's import side effect binding a fixed one. Behaviour is
+ * unchanged: `createServer()` returns a server that is not yet listening.
+ */
+export function createServer(): http.Server {
+  return http.createServer((req, res) => {
+    // CORS: allow browser tools to call the API too.
+    res.setHeader("access-control-allow-origin", "*");
+    res.setHeader("access-control-allow-methods", "POST, GET, OPTIONS");
+    res.setHeader("access-control-allow-headers", "content-type");
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    if (req.method === "GET" && (req.url === "/" || req.url === "/healthz")) {
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end(req.url === "/healthz" ? "ok" : USAGE);
+      return;
+    }
+    // Readiness/limits for orchestrators. Additive: /healthz keeps its bare "ok"
+    // body so an existing liveness probe is unaffected.
+    if (req.method === "GET" && req.url === "/info") {
+      const info = {
+        status: "ok",
+        maxUploadBytes: MAX_UPLOAD,
+        // This path runs everything in-process: no worker pool is available on
+        // Node, so PNG encoding and the max-compression pass are single-threaded.
+        // Reported so a caller can tell why a large pack is slower here than in
+        // the browser build, instead of assuming the server is stuck.
+        parallelPng: false,
+        node: process.version,
+      };
+      const body = JSON.stringify(info, null, 2);
+      res.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
+      res.end(body);
+      return;
+    }
+    if (req.method === "POST" && req.url?.startsWith("/convert")) {
+      handleConvert(req, res).catch((err) => {
+        console.error(err);
+        if (!res.headersSent) res.writeHead(500, { "content-type": "text/plain" });
+        res.end(`conversion failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
+      return;
+    }
+    res.writeHead(404, { "content-type": "text/plain" });
+    res.end(USAGE);
+  });
+}
 
-server.listen(PORT, () => {
-  console.log(`GeyserConverter API listening on http://localhost:${PORT}`);
-});
+// Only bind a port when this file is the entry point (`tsx src/server.ts`), so
+// importing it from a test does not open a socket on the configured port.
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  createServer().listen(PORT, () => {
+    console.log(`Loomery API listening on http://localhost:${PORT}`);
+  });
+}

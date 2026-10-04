@@ -8,7 +8,7 @@ export const packagingStage: PipelineStage = {
     const description =
       typeof ctx.java.mcmeta?.pack?.description === "string"
         ? (ctx.java.mcmeta.pack.description as string)
-        : `Converted from Java Edition by GeyserConverter`;
+        : `Converted from Java Edition by Loomery`;
 
     ctx.bedrock.writeJson(
       "manifest.json",

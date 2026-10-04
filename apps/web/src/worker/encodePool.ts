@@ -1,4 +1,4 @@
-import { encodePng, type PngEncoder, type RawImage } from "@geyser-converter/core";
+import { encodePng, type PngEncoder, type RawImage } from "@loomery/core";
 
 interface Reply {
   id: number;

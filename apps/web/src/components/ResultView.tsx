@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import type { ConvertResult } from "@geyser-converter/core";
-import { buttonStyle } from "../App.js";
+import type { ConvertResult } from "@loomery/core";
+import { useI18n } from "../i18n/index.js";
 
 function download(name: string, data: Uint8Array | string, mime: string) {
   const blob =
@@ -18,12 +18,51 @@ function download(name: string, data: Uint8Array | string, mime: string) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-const STATUS_META: Record<string, { icon: string; color: string }> = {
-  converted: { icon: "✅", color: "var(--accent)" },
-  approximated: { icon: "⚠️", color: "var(--warn)" },
-  skipped: { icon: "⏭️", color: "var(--muted)" },
-  error: { icon: "❌", color: "var(--err)" },
+/** Status → dot class + catalogue key. Dots instead of emoji so colour carries meaning. */
+const STATUS_META: Record<string, { dot: string; key: string }> = {
+  converted: { dot: "dot-converted", key: "result.statusConverted" },
+  approximated: { dot: "dot-approximated", key: "result.statusApproximated" },
+  skipped: { dot: "dot-skipped", key: "result.statusSkipped" },
+  error: { dot: "dot-error", key: "result.statusError" },
 };
+
+const STATUS_ORDER = ["all", "converted", "approximated", "skipped", "error"] as const;
+
+function CheckIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="m5 12.5 4.5 4.5L19 7.5" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function WarnIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M10.3 4.3 2.8 17a2 2 0 0 0 1.7 3h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path d="M12 9.5v4M12 16.6v.3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PanelTitle({ icon, title, sub }: { icon: React.ReactNode; title: string; sub?: string }) {
+  return (
+    <div className="panel-head">
+      <span className="panel-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <div>
+        <div className="panel-title">{title}</div>
+        {sub !== undefined && <div className="panel-sub">{sub}</div>}
+      </div>
+    </div>
+  );
+}
 
 export function ResultView({
   result,
@@ -34,6 +73,7 @@ export function ResultView({
   packName: string;
   onReset: () => void;
 }) {
+  const { t } = useI18n();
   const [filter, setFilter] = useState<string>("all");
   const { summary, entries } = result.report;
 
@@ -42,80 +82,94 @@ export function ResultView({
     [entries, filter],
   );
 
+  const statusLabel = (status: string): string =>
+    STATUS_META[status] !== undefined ? t(STATUS_META[status]!.key) : status;
+
+  const stats: { key: string; className: string; label: string }[] = [
+    { key: "converted", className: "ok", label: t("result.statConverted") },
+    { key: "approximated", className: "warn", label: t("result.statApproximated") },
+    { key: "skipped", className: "", label: t("result.statSkipped") },
+    { key: "error", className: "err", label: t("result.statErrors") },
+  ];
+
   return (
     <div>
-      <div
-        style={{
-          background: "var(--panel)",
-          border: "1px solid var(--border)",
-          borderRadius: 16,
-          padding: 24,
-          marginBottom: 20,
-        }}
-      >
-        <h2 style={{ marginTop: 0 }}>Conversion complete</h2>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <button
-            style={buttonStyle}
-            onClick={() => download(`${packName}.mcpack`, result.mcpack, "application/zip")}
-          >
-            ⬇ {packName}.mcpack
-          </button>
-          {result.geyserMappings !== undefined && (
-            <button
-              style={{ ...buttonStyle, background: "var(--panel)", color: "var(--accent)", border: "1px solid var(--accent)" }}
-              onClick={() => download("geyser_mappings.json", result.geyserMappings!, "application/json")}
-            >
-              ⬇ geyser_mappings.json
-            </button>
-          )}
-          {result.geyserBlockMappings !== undefined && (
-            <button
-              style={{ ...buttonStyle, background: "var(--panel)", color: "var(--accent)", border: "1px solid var(--accent)" }}
-              onClick={() => download("geyser_blocks.json", result.geyserBlockMappings!, "application/json")}
-            >
-              ⬇ geyser_blocks.json
-            </button>
-          )}
-          {result.displayEntityMappings !== undefined && (
-            <button
-              style={{ ...buttonStyle, background: "var(--panel)", color: "var(--accent)", border: "1px solid var(--accent)" }}
-              onClick={() => download("geyser_displayentity_mappings.yml", result.displayEntityMappings!, "text/yaml")}
-            >
-              ⬇ furniture mappings.yml
-            </button>
-          )}
-          {result.displayEntityConfig !== undefined && (
-            <button
-              style={{ ...buttonStyle, background: "var(--panel)", color: "var(--warn)", border: "1px solid var(--warn)" }}
-              onClick={() => download("geyserdisplayentity_config.yml", result.displayEntityConfig!, "text/yaml")}
-            >
-              ⬇ furniture config.yml (seats furniture)
-            </button>
-          )}
-          {result.modelEngineInput !== undefined && (
-            <button
-              style={{ ...buttonStyle, background: "var(--panel)", color: "var(--accent)", border: "1px solid var(--accent)" }}
-              onClick={() => download("modelengine_input.zip", result.modelEngineInput!, "application/zip")}
-            >
-              ⬇ ModelEngine models (input.zip)
-            </button>
-          )}
-          <button
-            style={{ ...buttonStyle, background: "var(--panel)", color: "var(--text)", border: "1px solid var(--border)" }}
-            onClick={() =>
-              download("conversion_report.json", JSON.stringify(result.report, null, 2), "application/json")
-            }
-          >
-            ⬇ report.json
-          </button>
-          <button
-            style={{ ...buttonStyle, background: "transparent", color: "var(--muted)", border: "1px solid var(--border)" }}
-            onClick={onReset}
-          >
-            Convert another
-          </button>
+      <div className="results-head">
+        <div className="results-title">
+          <span className="results-check">
+            <CheckIcon />
+          </span>
+          {t("result.done")}
         </div>
+        <button className="btn btn-ghost btn-sm" onClick={onReset}>
+          {t("result.again")}
+        </button>
+      </div>
+
+      <div className="summary-grid">
+        {stats.map((s) => (
+          <div key={s.key} className={`stat ${s.className}`}>
+            <div className="stat-value">{summary[s.key as keyof typeof summary] ?? 0}</div>
+            <div className="stat-label">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="downloads">
+        <button
+          className="btn btn-primary"
+          onClick={() => download(`${packName}.mcpack`, result.mcpack, "application/zip")}
+        >
+          ⬇ {packName}.mcpack
+        </button>
+        {result.geyserMappings !== undefined && (
+          <button
+            className="btn btn-accent-outline"
+            onClick={() => download("geyser_mappings.json", result.geyserMappings!, "application/json")}
+          >
+            ⬇ geyser_mappings.json
+          </button>
+        )}
+        {result.geyserBlockMappings !== undefined && (
+          <button
+            className="btn btn-accent-outline"
+            onClick={() => download("geyser_blocks.json", result.geyserBlockMappings!, "application/json")}
+          >
+            ⬇ geyser_blocks.json
+          </button>
+        )}
+        {result.displayEntityMappings !== undefined && (
+          <button
+            className="btn btn-accent-outline"
+            onClick={() => download("geyser_displayentity_mappings.yml", result.displayEntityMappings!, "text/yaml")}
+          >
+            ⬇ {t("result.furnitureMappings")}
+          </button>
+        )}
+        {result.displayEntityConfig !== undefined && (
+          <button
+            className="btn btn-warn"
+            onClick={() => download("geyserdisplayentity_config.yml", result.displayEntityConfig!, "text/yaml")}
+          >
+            ⬇ {t("result.furnitureConfig")}
+          </button>
+        )}
+        {result.modelEngineInput !== undefined && (
+          <button
+            className="btn btn-accent-outline"
+            onClick={() => download("modelengine_input.zip", result.modelEngineInput!, "application/zip")}
+          >
+            ⬇ {t("result.modelEngine")}
+          </button>
+        )}
+        <button
+          className="btn"
+          onClick={() =>
+            download("conversion_report.json", JSON.stringify(result.report, null, 2), "application/json")
+          }
+        >
+          ⬇ {t("result.reportJson")}
+        </button>
       </div>
 
       <RequiredPlugins result={result} />
@@ -126,62 +180,68 @@ export function ResultView({
 
       <PerfPanel timings={result.timings} />
 
-      <div
-        style={{
-          background: "var(--panel)",
-          border: "1px solid var(--border)",
-          borderRadius: 16,
-          padding: 24,
-        }}
-      >
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-          {(["all", "converted", "approximated", "skipped", "error"] as const).map((s) => (
+      <div className="report-block">
+        <PanelTitle
+          icon={
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+            </svg>
+          }
+          title={t("result.reportTitle")}
+          sub={t("result.reportSub")}
+        />
+
+        <div className="chips">
+          {STATUS_ORDER.map((s) => (
             <button
               key={s}
+              className={`chip${filter === s ? " is-active" : ""}`}
+              aria-pressed={filter === s}
               onClick={() => setFilter(s)}
-              style={{
-                background: filter === s ? "var(--accent-dim)" : "transparent",
-                color: filter === s ? "var(--accent)" : "var(--muted)",
-                border: `1px solid ${filter === s ? "var(--accent)" : "var(--border)"}`,
-                borderRadius: 20,
-                padding: "4px 14px",
-                cursor: "pointer",
-                fontSize: 13,
-              }}
             >
-              {s === "all"
-                ? `all (${entries.length})`
-                : `${STATUS_META[s]?.icon ?? ""} ${s} (${summary[s]})`}
+              {s === "all" ? (
+                <>
+                  {t("result.all")} ({entries.length})
+                </>
+              ) : (
+                <>
+                  <span className={`dot ${STATUS_META[s]?.dot ?? ""}`} />
+                  {statusLabel(s)} ({summary[s as keyof typeof summary] ?? 0})
+                </>
+              )}
             </button>
           ))}
         </div>
-        <div style={{ maxHeight: 420, overflowY: "auto", fontSize: 13 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+
+        <div className="report-scroll">
+          <table className="report">
             <thead>
-              <tr style={{ textAlign: "left", color: "var(--muted)" }}>
-                <th style={thStyle}>Status</th>
-                <th style={thStyle}>Stage</th>
-                <th style={thStyle}>Source</th>
-                <th style={thStyle}>Detail</th>
+              <tr>
+                <th>{t("result.columnStatus")}</th>
+                <th>{t("result.columnStage")}</th>
+                <th>{t("result.columnSource")}</th>
+                <th>{t("result.columnDetail")}</th>
               </tr>
             </thead>
             <tbody>
               {visible.slice(0, 2000).map((e, i) => (
-                <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
-                  <td style={{ ...tdStyle, color: STATUS_META[e.status]?.color }}>
-                    {STATUS_META[e.status]?.icon} {e.status}
+                <tr key={i}>
+                  <td className="cell-status" data-status={e.status}>
+                    <span className={`dot ${STATUS_META[e.status]?.dot ?? ""}`} />
+                    {statusLabel(e.status)}
                   </td>
-                  <td style={tdStyle}>{e.stage}</td>
-                  <td style={{ ...tdStyle, wordBreak: "break-all" }}>{e.source}</td>
-                  <td style={{ ...tdStyle, color: "var(--muted)" }}>
+                  <td>{e.stage}</td>
+                  <td className="cell-source">{e.source}</td>
+                  <td className="cell-detail">
                     {e.detail ?? (e.outputs && e.outputs.length > 0 ? e.outputs.join("; ") : "")}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {visible.length === 0 && <div className="report-more">{t("result.empty")}</div>}
           {visible.length > 2000 && (
-            <p style={{ color: "var(--muted)" }}>…and {visible.length - 2000} more (see report.json)</p>
+            <div className="report-more">{t("result.more", { count: visible.length - 2000 })}</div>
           )}
         </div>
       </div>
@@ -189,46 +249,34 @@ export function ResultView({
   );
 }
 
-const thStyle: React.CSSProperties = { padding: "6px 10px", position: "sticky", top: 0, background: "var(--panel)" };
-const tdStyle: React.CSSProperties = { padding: "6px 10px", verticalAlign: "top" };
-
 function fmtMs(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
 }
 
 /** Collapsible performance breakdown: per-stage durations + hot-op costs. */
 function PerfPanel({ timings }: { timings: ConvertResult["timings"] }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const stages = [...timings.stages].filter((s) => s.ms > 0).sort((a, b) => b.ms - a.ms);
   const total = timings.totalMs;
   return (
-    <div
-      style={{
-        background: "var(--panel)",
-        border: "1px solid var(--border)",
-        borderRadius: 16,
-        padding: open ? 24 : "14px 24px",
-        marginBottom: 20,
-      }}
-    >
-      <button
-        onClick={() => setOpen((v) => !v)}
-        style={{ background: "transparent", color: "var(--muted)", border: "none", cursor: "pointer", fontSize: 14, padding: 0 }}
-      >
-        {open ? "▾" : "▸"} Performance — {fmtMs(total)} total
+    <div className="panel" style={{ padding: open ? 20 : "14px 20px" }}>
+      <button className="disclosure" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span className="disclosure-caret">▶</span>
+        {t("result.perf", { total: fmtMs(total) })}
       </button>
       {open && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 16, fontSize: 13 }}>
+        <div className="perf-grid">
           <div>
-            <div style={{ color: "var(--muted)", marginBottom: 8 }}>By stage</div>
+            <div className="perf-col-title">{t("result.perfStage")}</div>
             {stages.map((s) => (
               <PerfBar key={s.name} label={s.name} ms={s.ms} total={total} />
             ))}
           </div>
           <div>
-            <div style={{ color: "var(--muted)", marginBottom: 8 }}>Hot operations</div>
+            <div className="perf-col-title">{t("result.perfOps")}</div>
             {timings.ops.slice(0, 8).map((o) => (
-              <PerfBar key={o.category} label={`${o.category} (${o.count}×)`} ms={o.totalMs} total={total} />
+              <PerfBar key={o.category} label={`${o.category} ×${o.count}`} ms={o.totalMs} total={total} />
             ))}
           </div>
         </div>
@@ -240,13 +288,15 @@ function PerfPanel({ timings }: { timings: ConvertResult["timings"] }) {
 function PerfBar({ label, ms, total }: { label: string; ms: number; total: number }) {
   const pct = total > 0 ? Math.round((ms / total) * 100) : 0;
   return (
-    <div style={{ marginBottom: 6 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ wordBreak: "break-all" }}>{label}</span>
-        <span style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{fmtMs(ms)} · {pct}%</span>
+    <div className="perf-row">
+      <div className="perf-row-head">
+        <span className="perf-name">{label}</span>
+        <span className="perf-value">
+          {fmtMs(ms)} · {pct}%
+        </span>
       </div>
-      <div style={{ height: 4, background: "var(--bg)", borderRadius: 2, marginTop: 2 }}>
-        <div style={{ height: 4, width: `${pct}%`, background: "var(--accent)", borderRadius: 2 }} />
+      <div className="perf-track">
+        <div className="perf-fill" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
@@ -255,58 +305,63 @@ function PerfBar({ label, ms, total }: { label: string; ms: number; total: numbe
 /** The Geyser plugins/extensions needed to actually use the converted output,
  * shown conditionally on what the conversion produced. */
 function RequiredPlugins({ result }: { result: ConvertResult }) {
+  const { t } = useI18n();
   const plugins: { name: string; url: string; note: string }[] = [
-    { name: "Geyser", url: "https://geysermc.org/download?project=geyser", note: "lets Bedrock players join; loads the .mcpack + mappings" },
-    { name: "Floodgate", url: "https://geysermc.org/download?project=floodgate", note: "Bedrock auth (no Java account needed)" },
+    { name: t("plugins.geyser"), url: "https://geysermc.org/download?project=geyser", note: t("plugins.geyserNote") },
+    { name: t("plugins.floodgate"), url: "https://geysermc.org/download?project=floodgate", note: t("plugins.floodgateNote") },
   ];
   if (result.displayEntityMappings !== undefined) {
     plugins.push({
-      name: "GeyserDisplayEntity",
+      name: t("plugins.displayEntity"),
       url: "https://github.com/GeyserExtensionists/GeyserDisplayEntity",
-      note: "renders furniture / placed display-entity items on Bedrock",
+      note: t("plugins.displayEntityNote"),
     });
   }
   if (result.modelEngineInput !== undefined) {
     plugins.push(
       {
-        name: "GeyserModelEngine (extension + Spigot plugin)",
+        name: t("plugins.modelEngine"),
         url: "https://github.com/GeyserExtensionists/GeyserModelEngine",
-        note: "renders ModelEngine / MythicMobs mob models on Bedrock (generates the pack from input.zip)",
+        note: t("plugins.modelEngineNote"),
       },
       {
-        name: "GeyserUtils",
+        name: t("plugins.utils"),
         url: "https://github.com/GeyserExtensionists/GeyserUtils",
-        note: "required by GeyserModelEngine to call Bedrock-side features",
+        note: t("plugins.utilsNote"),
       },
     );
   }
 
   return (
-    <div
-      style={{
-        background: "var(--panel)",
-        border: "1px solid var(--border)",
-        borderRadius: 12,
-        padding: 16,
-        marginTop: 16,
-      }}
-    >
-      <strong style={{ fontSize: 14 }}>Required plugins &amp; extensions</strong>
-      <p style={{ color: "var(--muted)", fontSize: 12, margin: "4px 0 10px" }}>
-        Install these on your server so Bedrock players see the converted content.
-      </p>
-      <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 6 }}>
+    <div className="panel">
+      <PanelTitle
+        icon={
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M12 3 4 6.5v5c0 4.6 3.2 8.4 8 9.5 4.8-1.1 8-4.9 8-9.5v-5L12 3Z"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinejoin="round"
+            />
+          </svg>
+        }
+        title={t("plugins.title")}
+        sub={t("plugins.sub")}
+      />
+      <ul className="tick-list">
         {plugins.map((p) => (
-          <li key={p.name} style={{ fontSize: 13 }}>
-            <a
-              href={p.url}
-              target="_blank"
-              rel="noreferrer"
-              style={{ color: "var(--accent)", fontWeight: 600 }}
-            >
-              {p.name}
-            </a>
-            <span style={{ color: "var(--muted)" }}> — {p.note}</span>
+          <li key={p.name}>
+            <span className="tick">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="m5 12.5 4.5 4.5L19 7.5" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+            <span>
+              <a href={p.url} target="_blank" rel="noreferrer">
+                {p.name}
+              </a>
+              <span style={{ color: "var(--muted)" }}> — {p.note}</span>
+            </span>
           </li>
         ))}
       </ul>
@@ -316,64 +371,78 @@ function RequiredPlugins({ result }: { result: ConvertResult }) {
 
 /** Step-by-step install guide for the converted output, per artifact type. */
 function SetupGuide({ result }: { result: ConvertResult }) {
-  const code = (t: string) => <code style={{ background: "var(--bg)", padding: "1px 4px", borderRadius: 4 }}>{t}</code>;
+  const { t } = useI18n();
+  const code = (text: string) => <code>{text}</code>;
   const sections: { title: string; steps: React.ReactNode[] }[] = [];
 
   // 1. Base pack — always.
-  const baseSteps: React.ReactNode[] = [
-    <>Install <b>Geyser</b> and <b>Floodgate</b> on your server (or proxy).</>,
-    <>Drop the <b>.mcpack</b> into Geyser's {code("packs/")} folder.</>,
-  ];
+  const baseSteps: React.ReactNode[] = [<>{t("guide.base1")}</>, <>{t("guide.base2")}</>];
   if (result.geyserMappings !== undefined || result.geyserBlockMappings !== undefined) {
-    baseSteps.push(
-      <>Put the mapping json ({[result.geyserMappings && "geyser_mappings.json", result.geyserBlockMappings && "geyser_blocks.json"].filter(Boolean).join(", ")}) into Geyser's {code("custom_mappings/")} folder.</>,
-    );
+    const files = [
+      result.geyserMappings && "geyser_mappings.json",
+      result.geyserBlockMappings && "geyser_blocks.json",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    baseSteps.push(<>{t("guide.base3", { files })}</>);
   }
   if (result.geyserBlockMappings !== undefined) {
-    baseSteps.push(<>Set {code("enable-custom-content: true")} in Geyser's {code("config.yml")} (needed for custom blocks).</>);
+    baseSteps.push(<>{t("guide.base4")}</>);
   }
-  baseSteps.push(<>Restart Geyser. Bedrock players now see the custom items/textures.</>);
-  sections.push({ title: "1. Resource pack + Geyser", steps: baseSteps });
+  baseSteps.push(<>{t("guide.base5")}</>);
+  sections.push({ title: t("guide.baseTitle"), steps: baseSteps });
 
   // 2. Furniture.
   if (result.displayEntityMappings !== undefined) {
-    const f: React.ReactNode[] = [
-      <>Download the <b>GeyserDisplayEntity</b> extension jar and drop it in Geyser's {code("extensions/")} folder. Restart once so it creates its folders.</>,
-      <>Put {code("geyser_displayentity_mappings.yml")} in {code("extensions/geyserdisplayentity/Mappings/")}.</>,
-    ];
+    const f: React.ReactNode[] = [<>{t("guide.furniture1")}</>, <>{t("guide.furniture2")}</>];
     if (result.displayEntityConfig !== undefined) {
-      f.push(<>Put {code("geyserdisplayentity_config.yml")} in {code("extensions/geyserdisplayentity/")} (back up your own first). <b>Required</b> — its global y-offset/height seat furniture on the floor; without it pieces float ~1 block up.</>);
+      f.push(
+        <>
+          {t("guide.furniture3")} <span className="req-tag">{t("guide.required")}</span>
+        </>,
+      );
     }
-    f.push(<>Restart Geyser. Furniture your Nexo/Oraxen/ItemsAdder/CraftEngine plugin places now renders for Bedrock.</>);
-    sections.push({ title: "2. Furniture (GeyserDisplayEntity)", steps: f });
+    f.push(<>{t("guide.furniture4")}</>);
+    sections.push({ title: t("guide.furnitureTitle"), steps: f });
   }
 
   // 3. ModelEngine mobs.
   if (result.modelEngineInput !== undefined) {
     const n = result.displayEntityMappings !== undefined ? 3 : 2;
     sections.push({
-      title: `${n}. ModelEngine / MythicMobs mobs (GeyserModelEngine)`,
+      title: t("guide.mobTitle", { n }),
       steps: [
-        <>Server plugins: keep your <b>ModelEngine</b> + <b>MythicMobs</b>, and add <b>GeyserModelEngine</b> (Spigot) and <b>GeyserUtils</b> (spigot).</>,
-        <>Geyser extensions: put <b>GeyserModelEngineExtension</b> and <b>geyserutils-geyser</b> in Geyser's {code("extensions/")} folder.</>,
-        <>If you run a proxy (Velocity/Bungee), set {code("send-floodgate-data: true")} in Floodgate and copy {code("key.pem")} to the backend servers.</>,
-        <>Start the server once so the extension creates its folders, then unzip {code("modelengine_input.zip")} into {code("extensions/geysermodelengineextension/input/")} (each model keeps its own subfolder — the zip is already laid out this way).</>,
-        <>Reload Geyser (or restart). The extension generates the Bedrock pack from {code("input/")} and applies it automatically — no manual pack install.</>,
-        <>Spawn a mob via MythicMobs/MCPets as usual; Bedrock players now see the model.</>,
+        <>{t("guide.mob1")}</>,
+        <>{t("guide.mob2")}</>,
+        <>{t("guide.mob3")}</>,
+        <>{t("guide.mob4")}</>,
+        <>{t("guide.mob5")}</>,
+        <>{t("guide.mob6")}</>,
       ],
     });
   }
 
   return (
-    <div style={{ background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 12, padding: 16, marginTop: 16 }}>
-      <strong style={{ fontSize: 14 }}>Setup guide</strong>
-      <div style={{ display: "grid", gap: 14, marginTop: 10 }}>
+    <div className="panel">
+      <PanelTitle
+        icon={
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M5 4.5h11a2 2 0 0 1 2 2V20H7a2 2 0 0 1-2-2V4.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+            <path d="M5 16.5h13" stroke="currentColor" strokeWidth="1.8" />
+          </svg>
+        }
+        title={t("guide.title")}
+        sub={t("guide.sub")}
+      />
+      <div>
         {sections.map((s) => (
-          <div key={s.title}>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{s.title}</div>
-            <ol style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 4, color: "var(--muted)", fontSize: 13 }}>
+          <div key={s.title} className="guide-section">
+            <div className="guide-title">{s.title}</div>
+            <ol className="guide-steps">
               {s.steps.map((step, i) => (
-                <li key={i}>{step}</li>
+                <li key={i}>
+                  <span>{step}</span>
+                </li>
               ))}
             </ol>
           </div>
@@ -390,39 +459,21 @@ function ConfigNudgeBanner({
   entries: ConvertResult["report"]["entries"];
   onReset: () => void;
 }) {
+  const { t } = useI18n();
   const nudge = entries.find((e) => e.stage === "config-nudge");
   if (nudge === undefined) return null;
   return (
-    <div
-      style={{
-        background: "var(--panel)",
-        border: "1px solid var(--warn)",
-        borderRadius: 16,
-        padding: 20,
-        marginBottom: 20,
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-      }}
-    >
-      <strong style={{ color: "var(--warn)", fontSize: 14 }}>
-        Items may not map correctly — upload a plugin config zip
-      </strong>
-      <p style={{ color: "var(--muted)", margin: 0, fontSize: 13 }}>
-        {nudge.detail}
-      </p>
-      <button
-        onClick={onReset}
-        style={{
-          ...buttonStyle,
-          background: "var(--warn)",
-          alignSelf: "flex-start",
-          fontSize: 13,
-          padding: "6px 16px",
-        }}
-      >
-        Convert again with config
-      </button>
+    <div className="callout callout-warn" role="status">
+      <span className="callout-icon">
+        <WarnIcon />
+      </span>
+      <div className="callout-body">
+        <div className="callout-title">{t("nudge.title")}</div>
+        <p className="callout-text">{nudge.detail}</p>
+        <button className="btn btn-warn btn-sm" style={{ justifySelf: "flex-start", marginTop: 4 }} onClick={onReset}>
+          {t("nudge.action")}
+        </button>
+      </div>
     </div>
   );
 }

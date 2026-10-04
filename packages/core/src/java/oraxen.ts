@@ -71,6 +71,7 @@ export function parseOraxenConfigZips(zips: Uint8Array[]): OraxenHints {
     backpacks: [],
     furniture: [],
     furnitureTransforms: {},
+    vanillaModelItems: [],
     files: 0,
     items: 0,
   };

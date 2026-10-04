@@ -1,5 +1,6 @@
 export { convertPack, type ConvertResult } from "./convert/pipeline.js";
 export type { ConvertOptions, ProgressCallback } from "./convert/context.js";
+export { optionsFromHints, type HintOptions } from "./convert/optionsFromHints.js";
 export { VirtualFs } from "./io/vfs.js";
 export { readZip, readZipDetailed, writeZip, type ReadZipResult } from "./io/zip.js";
 export { JavaPack, parseResourceLocation } from "./java/javaPack.js";

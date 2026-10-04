@@ -2,10 +2,11 @@
 import { expose } from "comlink";
 import {
   convertPack,
+  optionsFromHints,
   parseOraxenConfigZips,
   type ConvertOptions,
   type ConvertResult,
-} from "@geyser-converter/core";
+} from "@loomery/core";
 import { createEncodePool } from "./encodePool.js";
 import { createZopfliPool, poolSize } from "./zopfliPool.js";
 
@@ -50,18 +51,7 @@ const api: WorkerApi = {
       }
       options = {
         ...options,
-        baseItemHints: hints.baseItems,
-        displayNameHints: hints.displayNames,
-        equippableHints: hints.equippables,
-        cmdItemKeys: hints.cmdKeys,
-        colorHints: hints.colors,
-        backpackItems: hints.backpacks,
-        furnitureItems: hints.furniture,
-        furnitureTransforms: hints.furnitureTransforms,
-        configZipProvided: true,
-        // Scanned for .bbmodel ModelEngine blueprints (kept raw; hints above are
-        // the parsed form). Copy so the transfer of `bytes` below can't neuter them.
-        pluginConfigZips: configZips.map((z) => z.slice()),
+        ...optionsFromHints(hints, configZips),
       };
       hintCount = hints.items;
     }

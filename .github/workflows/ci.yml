@@ -17,4 +17,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      # Covers all three packages. core runs the conversion suite (including the
+      # structural end-to-end check in test/selfcheck.test.ts), and web/api cover
+      # their own pure modules.
       - run: pnpm test

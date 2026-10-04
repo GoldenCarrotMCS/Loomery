@@ -24,6 +24,16 @@ export interface FurnitureTransform {
   context?: JavaDisplayContext;
 }
 
+/** A plugin item rendered with a vanilla item model, see {@link ConfigHints.vanillaModelItems}. */
+export interface VanillaModelItem {
+  /** Config key, for the report. */
+  key: string;
+  /** Java item the server sends, e.g. "minecraft:paper". */
+  baseItem: string;
+  /** Vanilla item model it carries, e.g. "minecraft:apple". */
+  itemModel: string;
+}
+
 /**
  * Everything the converter learns from a server's item-plugin configs. Every
  * map is keyed the way the pipeline looks items up: the config key, the
@@ -58,6 +68,13 @@ export interface ConfigHints {
   furniture: string[];
   /** Per-furniture-key placement hints from the plugin's furniture mechanic. */
   furnitureTransforms: Record<string, FurnitureTransform>;
+  /**
+   * Plugin items that borrow a vanilla item's look by pointing `item_model` at
+   * it (CraftEngine `material: paper` + `item_model: minecraft:apple`). The pack
+   * ships nothing for these — the client already has the model — so no item
+   * definition in the pack produces a mapping, and Bedrock shows the material.
+   */
+  vanillaModelItems: VanillaModelItem[];
   /** yml files parsed / items discovered, for reporting. */
   files: number;
   items: number;

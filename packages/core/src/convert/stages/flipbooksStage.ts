@@ -68,10 +68,13 @@ export const flipbooksStage: PipelineStage = {
 
       const remap = remapVanillaTexture(texturePath);
       if (remap === undefined) continue;
-      const atlasTile = remap.outputPath.slice("textures/blocks/".length, -".png".length);
+      // Block textures map to exactly one Bedrock path and are never TGA, so a
+      // single output is the whole story here.
+      const remapPath = remap.outputPaths[0]!;
+      const atlasTile = remapPath.slice("textures/blocks/".length, -".png".length);
       const anim = meta.animation;
       const entry: Record<string, unknown> = {
-        flipbook_texture: remap.outputPath.slice(0, -".png".length),
+        flipbook_texture: remapPath.slice(0, -".png".length),
         atlas_tile: atlasTile,
         ticks_per_frame: frameTicks(anim.frametime),
       };

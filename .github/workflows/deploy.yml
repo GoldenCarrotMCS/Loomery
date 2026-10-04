@@ -27,7 +27,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm --filter @geyser-converter/web build
+      - run: pnpm --filter @loomery/web build
       - name: Publish to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
